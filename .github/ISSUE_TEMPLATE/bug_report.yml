@@ -1,0 +1,59 @@
+name: Bug report
+description: A score, action, or page that doesn't behave the way the matrix says it should.
+title: "[bug] "
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. The faster we can reproduce
+        it, the faster it gets fixed.
+
+  - type: input
+    id: company
+    attributes:
+      label: Company / route affected
+      description: e.g. `/score/highgate-joinery-09887766` or "the search box"
+      placeholder: e.g. /score/some-company-12345678
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+      description: Reference the Risk Assessment Matrix v1.1 if it helps.
+      placeholder: |
+        Per the matrix, score 87 should map to Critical → 50% deposit · Net-7 ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened?
+      placeholder: |
+        Saw deposit 40% / Net-14 instead. Screenshot attached.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to ...
+        2. Click ...
+        3. See ...
+
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: Chrome 134 on macOS Sequoia, viewport 1440 × 900
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Console logs, network errors, screenshots — drop them here.

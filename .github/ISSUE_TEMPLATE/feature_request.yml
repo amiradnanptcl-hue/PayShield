@@ -1,0 +1,41 @@
+name: Feature request
+description: Propose a new signal class, integration, action, or UI improvement.
+title: "[feat] "
+labels: [enhancement, triage]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you solving?
+      description: Who is hurt by the absence of this feature, and how often?
+      placeholder: |
+        As an accountancy practice with 50 clients, I currently have to ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What's your proposed solution?
+      placeholder: |
+        Add a Slack alert when a watched customer's score crosses a tier.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What did you rule out, and why?
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Which area is this in?
+      multiple: false
+      options:
+        - Scoring (matrix, fallback, agent prompt)
+        - UI / design
+        - Data ingest (Companies House, PPR, sectors)
+        - Chase email pack
+        - Payments (Stripe, Solana Pay)
+        - Tooling / CI / docs
+        - Something else

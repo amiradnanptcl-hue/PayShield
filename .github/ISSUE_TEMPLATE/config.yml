@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Live demo
+    url: https://payshield-lake.vercel.app
+    about: Try the public deployment.
+  - name: Risk Assessment Matrix v1.1 (PDF)
+    url: https://payshield-lake.vercel.app/payshield-risk-matrix-v1.pdf
+    about: The canonical methodology document defining every tier and action.
