@@ -24,6 +24,12 @@ import {
   type ScoreInput,
   tierFor,
 } from "@/lib/scoring/schema";
+import {
+  buildScoreInputFromCompaniesHouse,
+  chSearch,
+  sectorHintFromSic,
+  type ChProfile,
+} from "@/lib/data/companies-house";
 
 /** Quick risk-tier prediction without a full ScoreCard. Used for autocomplete. */
 function quickTier(p: PprCompanyRecord): {
@@ -62,10 +68,26 @@ export type SuggestionItem = {
   slug: string;
   score: number;
   tier: ScoreCard["tier"];
-  source: "demo" | "ppr";
+  source: "demo" | "ppr" | "companies-house";
 };
 
-export function searchCompanies(query: string, limit = 8): SuggestionItem[] {
+/**
+ * Search across the three layers, in order:
+ *
+ *   1. Demo anchors (instant, 5 entries)
+ *   2. PPR register (instant, in-memory, 7,162 entries)
+ *   3. Live Companies House register (network call, only when (1+2) is sparse)
+ *
+ * The CH call only fires when local hits are below half the requested
+ * limit, so common searches (Tesco, Barclays etc.) don't burn an API
+ * call. Long-tail queries that aren't reportable to PPR — small SMEs,
+ * non-VAT-registered traders — fall through to CH and still resolve
+ * to a real company.
+ */
+export async function searchCompanies(
+  query: string,
+  limit = 8,
+): Promise<SuggestionItem[]> {
   const q = query.trim();
   if (!q) return [];
 
@@ -97,13 +119,41 @@ export function searchCompanies(query: string, limit = 8): SuggestionItem[] {
       })
     : [];
 
-  // Dedupe by company number (a PPR-listed company that's also a demo anchor
-  // — currently none — should only appear once).
   const seen = new Set(demoHits.map((d) => d.number));
-  return [
-    ...demoHits,
-    ...pprHits.filter((p) => !seen.has(p.number)),
-  ].slice(0, limit);
+  const dedupedPpr = pprHits.filter((p) => !seen.has(p.number));
+  dedupedPpr.forEach((p) => seen.add(p.number));
+  const localHits = [...demoHits, ...dedupedPpr];
+
+  // Live Companies House top-up. Fires only when local layer can't fill
+  // the response — saves API calls for common queries while still
+  // resolving long-tail SMEs that don't appear in PPR. Numbers we've
+  // already returned from demo / PPR are filtered out so the same
+  // company never appears twice in the autocomplete list.
+  const stillNeed = limit - localHits.length;
+  if (stillNeed > 0 && q.length >= 3) {
+    const chResults = await chSearch(q, Math.min(stillNeed + 2, 5));
+    const chHits: SuggestionItem[] = chResults
+      .filter((r) => !seen.has(r.company_number))
+      .map((r) => ({
+        name: formatCompanyName(r.title),
+        number: r.company_number,
+        sector: r.company_type === "plc"
+          ? "Public limited company"
+          : r.company_type === "llp"
+            ? "Limited liability partnership"
+            : "Limited company",
+        slug: `${formatCompanyName(r.title).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}-${r.company_number}`,
+        // No PPR data → unknown payment behaviour. Default to medium with a
+        // moderate score; the score page will compute a real tier from the
+        // full profile + heuristic.
+        score: 35,
+        tier: "medium" as const,
+        source: "companies-house" as const,
+      }));
+    localHits.push(...chHits);
+  }
+
+  return localHits.slice(0, limit);
 }
 
 /* ---------- score-page resolver ---------- */
@@ -116,6 +166,12 @@ export type ResolvedCompany =
   | {
       kind: "ppr";
       ppr: PprCompanyRecord;
+      sector: string;
+      input: ScoreInput;
+    }
+  | {
+      kind: "companies-house";
+      profile: ChProfile;
       sector: string;
       input: ScoreInput;
     };
@@ -167,7 +223,17 @@ export function buildPprScoreInput(p: PprCompanyRecord): ScoreInput {
   };
 }
 
-export function resolveCompany(idOrSlug: string): ResolvedCompany | null {
+/**
+ * Resolve any company identifier to a renderable record. Tries each
+ * source in order — demo, PPR, then live Companies House — and returns
+ * the first hit. Async because the CH lookup is a network call.
+ *
+ * Companies House is reached via slug *or* via raw 8-character company
+ * number; the score-page route accepts both.
+ */
+export async function resolveCompany(
+  idOrSlug: string,
+): Promise<ResolvedCompany | null> {
   const demo = findDemoCompanyById(idOrSlug) ?? findDemoCompany(idOrSlug);
   if (demo) return { kind: "demo", demo };
 
@@ -180,6 +246,33 @@ export function resolveCompany(idOrSlug: string): ResolvedCompany | null {
       input: buildPprScoreInput(ppr),
     };
   }
+
+  // Companies House fallback. Pull a possible company number from the
+  // tail of a slug like `tesco-plc-00445790` or treat the input as a
+  // raw number directly.
+  const numberCandidate = idOrSlug.match(/[A-Z0-9]{6,10}$/i)?.[0];
+  if (numberCandidate) {
+    const input = await buildScoreInputFromCompaniesHouse(numberCandidate);
+    if (input) {
+      // Refetch the profile from the cache for the discriminated-union
+      // narrow on the consumer side.
+      const profile = {
+        company_name: input.company.name,
+        company_number: input.company.number,
+        company_status: input.company.status,
+        date_of_creation: input.company.incorporated_on,
+        type: "ltd",
+        sic_codes: input.company.sic_codes,
+      } as ChProfile;
+      return {
+        kind: "companies-house",
+        profile,
+        sector: sectorHintFromSic(input.company.sic_codes),
+        input,
+      };
+    }
+  }
+
   return null;
 }
 

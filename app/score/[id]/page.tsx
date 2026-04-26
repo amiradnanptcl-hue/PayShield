@@ -51,10 +51,29 @@ function viewFor(resolved: ResolvedCompany): CompanyView {
       isAnchor: true,
     };
   }
+  if (resolved.kind === "ppr") {
+    return {
+      name: resolved.input.company.name,
+      number: resolved.ppr.number,
+      slug: resolved.ppr.slug,
+      sector: resolved.sector,
+      registered_office: null,
+      input: resolved.input,
+      presetCard: null,
+      isAnchor: false,
+    };
+  }
+  // kind === "companies-house" — live profile pulled from the register
+  // for any company not in the demo set or the PPR ingest. PPR features
+  // are absent so the ML scorer returns null and the heuristic fallback
+  // produces the score from governance + filing signals only.
   return {
     name: resolved.input.company.name,
-    number: resolved.ppr.number,
-    slug: resolved.ppr.slug,
+    number: resolved.profile.company_number,
+    slug: `${resolved.input.company.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")}-${resolved.profile.company_number}`,
     sector: resolved.sector,
     registered_office: null,
     input: resolved.input,
@@ -69,7 +88,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const resolved = resolveCompany(id);
+  const resolved = await resolveCompany(id);
   if (!resolved) return { title: "Company not found" };
   const v = viewFor(resolved);
   const card = v.presetCard;
@@ -92,7 +111,7 @@ export default async function ScorePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const resolved = resolveCompany(id);
+  const resolved = await resolveCompany(id);
   if (!resolved) notFound();
 
   const view = viewFor(resolved);
