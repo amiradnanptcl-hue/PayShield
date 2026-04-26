@@ -44,6 +44,14 @@ export const NetworkSignals = z.object({
   disqualified_in_network: z.number(),
   insolvent_neighbours: z.number(),
   phoenix_pattern_score: z.number().min(0).max(3),
+  /** PSC = Persons of Significant Control. Filed at Companies House
+   *  whenever the controlling shareholder/officer changes. Used by the
+   *  v1.1 ML model as a churn signal independent of director changes. */
+  psc_changes_12m: z.number().int().min(0).default(0),
+  /** Confirmation Statement is the annual filing that confirms a
+   *  company's officers, shareholders, registered office and SIC codes.
+   *  An overdue confirmation statement is a strong filing-anomaly signal. */
+  confirmation_statement_overdue: z.boolean().default(false),
 });
 
 export const ScoreInput = z.object({

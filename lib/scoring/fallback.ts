@@ -19,9 +19,12 @@ function sectorBenchmark(sicCodes: string[]): number {
 
 /**
  * Score-to-action mapping — PayShield Risk Assessment Matrix v1.1.
- * Strict per-tier rules from the published decision tree.
+ * Strict per-tier rules from the published decision tree. Exported as
+ * `actionForTier` so the ML scorer can reuse the exact same action
+ * numbers the heuristic and LLM paths produce — every code path lands
+ * on the same matrix row for any given tier.
  */
-function actionFor(
+export function actionForTier(
   tier: ScoreCard["tier"],
   /** When true the rationale gets a Phoenix-pattern preamble explaining
    *  why the points score has been overridden upward to Critical. */
@@ -279,6 +282,6 @@ export function fallbackScore(input: ScoreInput): ScoreCard {
     predicted_days_to_pay: Math.max(7, Math.min(180, predictedDays)),
     reasoning: sliced,
     headline,
-    action: actionFor(tier, phoenixTriggered),
+    action: actionForTier(tier, phoenixTriggered),
   };
 }

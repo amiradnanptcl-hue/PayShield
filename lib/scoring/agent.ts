@@ -6,6 +6,7 @@ import {
   type ScoreInput,
 } from "./schema";
 import { fallbackScore } from "./fallback";
+import { mlScore } from "./ml";
 
 const SCORING_TOOL = {
   name: "submit_score_card",
@@ -72,6 +73,24 @@ export async function scoreCompany(input: ScoreInput): Promise<ScoringResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   const model = process.env.ANTHROPIC_MODEL_SCORING ?? "claude-sonnet-4-6";
 
+  // ── Path 1: trained ML model (primary) ────────────────────────────
+  // The DecisionTreeClassifier produces a deterministic score in O(7)
+  // tree traversals, with reasoning derived from the actual decision
+  // path. Runs first because it's the most explainable scoring path
+  // and ships the same matrix-aligned action numbers as the others.
+  const mlCard = mlScore(input);
+  if (mlCard) {
+    return {
+      card: mlCard,
+      model_used: "ml-decision-tree-v1.1",
+      used_fallback: false,
+      latency_ms: Date.now() - start,
+    };
+  }
+
+  // ── Path 2: rule-based heuristic (fallback for non-PPR companies) ─
+  // The ML model needs PPR features; companies below the £36 M PPR
+  // reporting threshold get the deterministic v1.1 heuristic instead.
   if (!apiKey) {
     const card = fallbackScore(input);
     return {

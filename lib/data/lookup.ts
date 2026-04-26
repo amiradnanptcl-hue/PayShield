@@ -161,6 +161,8 @@ export function buildPprScoreInput(p: PprCompanyRecord): ScoreInput {
       disqualified_in_network: 0,
       insolvent_neighbours: 0,
       phoenix_pattern_score: 0,
+      psc_changes_12m: 0,
+      confirmation_statement_overdue: false,
     },
   };
 }

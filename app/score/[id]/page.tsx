@@ -97,12 +97,15 @@ export default async function ScorePage({
 
   const view = viewFor(resolved);
 
-  // Real PPR-only companies always run through the scoring agent / fallback
-  // heuristic. Hand-crafted anchors prefer their preset card if the agent
-  // path falls back to heuristic mode.
+  // Hand-crafted demo anchors always show their preset cards so the
+  // five-tier spectrum (Tesco LOW → Highgate CRITICAL) reads cleanly
+  // for the pitch. Real PPR-reported buyers run through the scoring
+  // pipeline — ML decision tree first, heuristic fallback when the
+  // model lacks features. The agent runs for ALL companies regardless
+  // (and its model_used metadata is shown to viewers) so the decision
+  // path is auditable even when we pin to a preset card.
   const result = await scoreCompany(view.input);
-  const card =
-    view.presetCard && result.used_fallback ? view.presetCard : result.card;
+  const card = view.presetCard ?? result.card;
 
   // Stable demo anchor for the chase-preview schedule. Using a fixed
   // reference rather than `Date.now()` so the rendered email previews

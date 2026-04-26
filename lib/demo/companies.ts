@@ -96,6 +96,8 @@ const brightplumb: DemoCompany = {
       disqualified_in_network: 0,
       insolvent_neighbours: 1,
       phoenix_pattern_score: 1,
+      psc_changes_12m: 2,
+      confirmation_statement_overdue: false,
     },
   },
   card: {
@@ -212,6 +214,8 @@ const tesco: DemoCompany = {
       disqualified_in_network: 0,
       insolvent_neighbours: 0,
       phoenix_pattern_score: 0,
+      psc_changes_12m: 0,
+      confirmation_statement_overdue: false,
     },
   },
   card: {
@@ -347,6 +351,8 @@ const highgate: DemoCompany = {
       // Phoenix-pattern fingerprint (under-18-months trigger). One mild
       // structural-overlap signal only.
       phoenix_pattern_score: 1,
+      psc_changes_12m: 2,
+      confirmation_statement_overdue: true,
     },
   },
   card: {
@@ -475,6 +481,8 @@ const meadow: DemoCompany = {
       disqualified_in_network: 0,
       insolvent_neighbours: 0,
       phoenix_pattern_score: 0,
+      psc_changes_12m: 0,
+      confirmation_statement_overdue: false,
     },
   },
   card: {
@@ -602,6 +610,8 @@ const halford: DemoCompany = {
       disqualified_in_network: 0,
       insolvent_neighbours: 0,
       phoenix_pattern_score: 0,
+      psc_changes_12m: 1,
+      confirmation_statement_overdue: false,
     },
   },
   card: {
