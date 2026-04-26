@@ -16,7 +16,7 @@
  *       three scoring paths (LLM, ML, heuristic) hit the same matrix.
  */
 
-import { actionForTier } from "./fallback";
+import { actionForTier, criticalStatusOverride } from "./fallback";
 import {
   type ScoreCard,
   type ScoreInput,
@@ -39,6 +39,15 @@ import {
  * route those companies to `fallbackScore` instead.
  */
 export function mlScore(input: ScoreInput): ScoreCard | null {
+  // Status override beats every model and every heuristic. If Companies
+  // House says the company is dissolved, in liquidation, in
+  // administration, etc., the matrix's normal scoring doesn't apply —
+  // there's nothing to invoice. Short-circuit here so the caller still
+  // receives a fully-formed Critical card without falling through to
+  // the rule-based heuristic for the same answer.
+  const statusOverride = criticalStatusOverride(input);
+  if (statusOverride) return statusOverride;
+
   const features = extractFeatures(input);
   if (!features) return null;
 

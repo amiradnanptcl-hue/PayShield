@@ -2,12 +2,28 @@ import { z } from "zod";
 
 /* ---------- Input schema (what we feed the agent) ---------- */
 
+/** Companies House status values that PayShield understands. The four
+ *  trading-impaired states (everything except "active") trigger a hard
+ *  Critical-tier override regardless of any other signal — see
+ *  `criticalStatusOverride()` in fallback.ts. */
+export const CompanyStatus = z.enum([
+  "active",
+  "dissolved",
+  "liquidation",
+  "administration",
+  "receivership",
+  "voluntary-arrangement",
+  "insolvency-proceedings",
+  "removed",
+]);
+export type CompanyStatus = z.infer<typeof CompanyStatus>;
+
 export const CompanyProfile = z.object({
   name: z.string(),
   number: z.string(),
   sic_codes: z.array(z.string()),
   incorporated_on: z.string(),
-  status: z.enum(["active", "dissolved", "liquidation", "administration"]),
+  status: CompanyStatus,
   accounts: z.object({
     next_due: z.string().nullable(),
     overdue: z.boolean(),

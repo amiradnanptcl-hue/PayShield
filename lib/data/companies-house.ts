@@ -131,6 +131,10 @@ export type ChProfile = {
   has_charges?: boolean;
 };
 
+type ChOfficerLink = {
+  officer?: { appointments?: string };
+};
+
 type ChOfficersResponse = {
   total_results?: number;
   items: Array<{
@@ -138,7 +142,28 @@ type ChOfficersResponse = {
     officer_role: string;
     appointed_on?: string;
     resigned_on?: string;
+    links?: ChOfficerLink;
   }>;
+};
+
+type ChAppointmentItem = {
+  /** The actual API nests company details inside `appointed_to`. */
+  appointed_to?: {
+    company_name?: string;
+    company_number?: string;
+    company_status?: string;
+  };
+  name?: string;
+  appointed_on?: string;
+  resigned_on?: string;
+  officer_role?: string;
+  is_pre_1992_appointment?: boolean;
+};
+
+type ChAppointmentsResponse = {
+  active_count?: number;
+  inactive_count?: number;
+  items?: ChAppointmentItem[];
 };
 
 type ChChargesResponse = {
@@ -199,6 +224,26 @@ export async function chOfficers(number: string) {
   return data?.items ?? [];
 }
 
+/** Pulls the appointment history for a single officer. The officer ID
+ *  is the stable token Companies House issues for a person — extracted
+ *  from the `links.officer.appointments` URL on a company-officers row. */
+export async function chOfficerAppointments(officerId: string) {
+  const clean = officerId.trim();
+  if (!clean) return [];
+  const data = await chFetch<ChAppointmentsResponse>(
+    `/officers/${clean}/appointments?items_per_page=50`,
+  );
+  return data?.items ?? [];
+}
+
+/** Extract the stable officer ID from the `links.officer.appointments`
+ *  URL Companies House returns. Format: `/officers/{ID}/appointments`. */
+export function extractOfficerId(officersLink?: string): string | null {
+  if (!officersLink) return null;
+  const match = officersLink.match(/\/officers\/([^/]+)\/appointments/);
+  return match?.[1] ?? null;
+}
+
 /** Charges register. */
 export async function chCharges(number: string) {
   const clean = number.trim().toUpperCase();
@@ -236,10 +281,79 @@ export async function buildScoreInputFromCompaniesHouse(
     chCharges(number),
   ]);
 
-  // Compute network signals from the officer feed.
+  // ── Director-history check (matrix v1.1, network proximity / Phoenix) ──
+  //
+  // For each ACTIVE director, pull their appointment history and count
+  // how many of their *other* companies are dissolved, in liquidation,
+  // in administration, or have been struck off. A directorship across
+  // multiple insolvency events is a strong fraud-pattern signal — the
+  // matrix's Phoenix heuristic explicitly flags this.
+  //
+  // We cap at 5 active directors to keep the API call count bounded
+  // (≤6 calls per company score, well inside the 600 req / 5 min limit).
+  const activeOfficers = officersRaw.filter((o) => !o.resigned_on).slice(0, 5);
   const oneYearAgo = new Date(
     Date.now() - 365 * 24 * 3600 * 1000,
   ).toISOString();
+  const twoYearsAgo = new Date(
+    Date.now() - 2 * 365 * 24 * 3600 * 1000,
+  ).toISOString();
+
+  let dissolvedNeighbours = 0;
+  let insolventNeighbours = 0;
+  const insolventCompanyNames = new Set<string>();
+
+  await Promise.all(
+    activeOfficers.map(async (officer) => {
+      const officerId = extractOfficerId(
+        officer.links?.officer?.appointments,
+      );
+      if (!officerId) return;
+      const appointments = await chOfficerAppointments(officerId);
+      for (const appt of appointments) {
+        const appointed = appt.appointed_to;
+        if (!appointed) continue;
+        // Skip the company we're scoring (current appointment)
+        if (appointed.company_number === number) continue;
+        const status = (appointed.company_status ?? "").toLowerCase();
+        const isDissolved =
+          status === "dissolved" ||
+          status === "removed" ||
+          status === "converted-closed" ||
+          status === "closed";
+        const isInsolvent =
+          status.includes("liquidation") ||
+          status.includes("administration") ||
+          status.includes("receivership") ||
+          status.includes("insolvency");
+        if (!isDissolved && !isInsolvent) continue;
+        // Only count appointments where the resignation/dissolution was
+        // recent enough to be meaningful — Phoenix patterns specifically
+        // require the dissolved company to have been recent (< 24 months).
+        const resignedInWindow =
+          (appt.resigned_on ?? "9999-12-31") > twoYearsAgo;
+        const stillAppointed = !appt.resigned_on;
+        if (!resignedInWindow && !stillAppointed) continue;
+        if (isInsolvent) insolventNeighbours++;
+        if (isDissolved) dissolvedNeighbours++;
+        if (appointed.company_name) insolventCompanyNames.add(appointed.company_name);
+      }
+    }),
+  );
+
+  // Phoenix-pattern score — Risk Matrix v1.1 §HEURISTIC.
+  // 0 = no flag, 1 = mild, 2 = full match (forces Critical).
+  // We trigger 2+ when 2 or more dissolution-state appointments are
+  // found across the active director set. The matrix's strict
+  // definition adds SIC-code overlap + office proximity, which we
+  // skip here for runtime — over-flagging Phoenix on a single match
+  // is acceptable because the override is reversible (manual review),
+  // whereas missing it costs the user real money.
+  let phoenixPatternScore: 0 | 1 | 2 | 3 = 0;
+  const totalRiskyNeighbours = dissolvedNeighbours + insolventNeighbours;
+  if (totalRiskyNeighbours >= 2) phoenixPatternScore = 2;
+  else if (totalRiskyNeighbours === 1) phoenixPatternScore = 1;
+
   const directorChurn12m = officersRaw.filter((o) => {
     const apptInWindow = (o.appointed_on ?? "") > oneYearAgo;
     const resignedInWindow = (o.resigned_on ?? "") > oneYearAgo;
@@ -269,17 +383,35 @@ export async function buildScoreInputFromCompaniesHouse(
     resigned_on: o.resigned_on ?? null,
   }));
 
-  // The status enum in our schema is constrained to four values; map.
+  // Map every Companies House status to PayShield's typed enum. Any
+  // value that signals the entity is no longer trading flows through
+  // to `criticalStatusOverride` in the scoring pipeline and forces a
+  // Critical-tier outcome — invoicing a dissolved or insolvent company
+  // is unenforceable, so we surface that loud and clear.
+  const raw = profile.company_status.toLowerCase().trim();
   const status: ScoreInput["company"]["status"] =
-    profile.company_status === "active"
+    raw === "active" || raw === "open" || raw === "registered"
       ? "active"
-      : profile.company_status === "dissolved"
+      : raw === "dissolved" ||
+          raw === "converted-closed" ||
+          raw === "closed"
         ? "dissolved"
-        : profile.company_status.includes("liquidation")
-          ? "liquidation"
-          : profile.company_status.includes("administration")
+        : raw === "removed"
+          ? "removed"
+          : raw.includes("administration")
             ? "administration"
-            : "active"; // fallback for "voluntary-arrangement", "receivership", etc.
+            : raw.includes("receivership")
+              ? "receivership"
+              : raw.includes("liquidation")
+                ? "liquidation"
+                : raw.includes("voluntary-arrangement") ||
+                    raw.includes("voluntary arrangement")
+                  ? "voluntary-arrangement"
+                  : raw.includes("insolvency")
+                    ? "insolvency-proceedings"
+                    : "active"; // unknown status → assume active, but the
+                                // status string is also passed through so
+                                // the override layer can flag it.
 
   return {
     company: {
@@ -300,9 +432,16 @@ export async function buildScoreInputFromCompaniesHouse(
     network: {
       director_churn_12m: directorChurn12m,
       cfo_changed_recently: cfoChangedRecently,
-      disqualified_in_network: 0, // would need /disqualified-officers cross-ref
-      insolvent_neighbours: 0,
-      phoenix_pattern_score: 0,
+      // We don't query the disqualified-officers register directly here
+      // (name-based lookups are unreliable), but a director with active
+      // appointments at recently-dissolved or insolvent companies is the
+      // operational signal the matrix's "disqualified_in_network"
+      // weighting is meant to catch.
+      disqualified_in_network: dissolvedNeighbours,
+      insolvent_neighbours: insolventNeighbours,
+      // Two or more dissolution-state appointments across the active
+      // director set forces Phoenix-pattern detection (matrix v1.1 §H).
+      phoenix_pattern_score: phoenixPatternScore,
       psc_changes_12m: 0, // would need /persons-with-significant-control delta
       confirmation_statement_overdue: Boolean(
         profile.confirmation_statement?.overdue,

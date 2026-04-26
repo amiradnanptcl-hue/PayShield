@@ -5,6 +5,123 @@ import {
   type RecommendedAction,
 } from "./schema";
 
+/* ────────────────────────────────────────────────────────────────────
+ *  Critical-status override (Risk Matrix v1.1, hard rule)
+ *
+ *  Some Companies House states tell us the legal entity has stopped
+ *  trading, is under insolvency proceedings, or no longer exists. In
+ *  those cases the entire scoring stack — ML model, heuristic, LLM —
+ *  must short-circuit to a Critical-tier outcome with explicit "do not
+ *  invoice" messaging. The matrix's normal score → action mapping
+ *  doesn't apply: there's nobody to take a deposit from.
+ *
+ *  Both `mlScore()` and `fallbackScore()` call this first; if it
+ *  returns a card, that card wins regardless of what the model or
+ *  heuristic would have produced.
+ * ──────────────────────────────────────────────────────────────────── */
+
+const NON_TRADING_STATUSES: ReadonlySet<ScoreInput["company"]["status"]> = new Set([
+  "dissolved",
+  "removed",
+  "liquidation",
+  "administration",
+  "receivership",
+  "voluntary-arrangement",
+  "insolvency-proceedings",
+]);
+
+export function criticalStatusOverride(input: ScoreInput): ScoreCard | null {
+  const status = input.company.status;
+  if (!NON_TRADING_STATUSES.has(status)) return null;
+
+  const name = input.company.name;
+
+  // Per-status copy. Each tells the user (1) the legal state, (2) why it
+  // matters commercially, and (3) what to do next.
+  const copy = {
+    dissolved: {
+      headline: `${name} is DISSOLVED at Companies House — do not invoice.`,
+      signal: "Company dissolved",
+      evidence: `${name} was struck off the Companies House register and no longer exists as a legal entity. Any invoice issued to a dissolved company is unenforceable; payment cannot be compelled.`,
+      rationale:
+        "DECLINE — company dissolved. The legal entity has been struck off the Companies House register and cannot be invoiced. If you're already exposed, contact the Treasury Solicitor (bona vacantia) about any pre-dissolution debt.",
+    },
+    removed: {
+      headline: `${name} has been REMOVED from the Companies House register — do not invoice.`,
+      signal: "Company removed from register",
+      evidence: `${name} has been removed from the Companies House register. The entity is no longer recognised; invoicing is unenforceable.`,
+      rationale:
+        "DECLINE — company removed from register. Invoicing is unenforceable. Refuse the engagement.",
+    },
+    liquidation: {
+      headline: `${name} is in LIQUIDATION — refuse the engagement.`,
+      signal: "Company in liquidation",
+      evidence: `${name} is under formal liquidation at Companies House. Assets are being realised by an Insolvency Practitioner; unsecured creditors typically recover pence-on-the-pound, if at all.`,
+      rationale:
+        "DECLINE — company in liquidation. New supplier invoices rank as unsecured claims with low recovery prospects. If you must engage, demand 100% upfront and confirm the Insolvency Practitioner authorises the spend.",
+    },
+    administration: {
+      headline: `${name} is in ADMINISTRATION — high-risk engagement, refuse or 100% upfront.`,
+      signal: "Company in administration",
+      evidence: `${name} is in formal administration at Companies House. An administrator is in control; the company is operating under court protection while a rescue or sale is attempted.`,
+      rationale:
+        "DECLINE or take 100% upfront. Company is in administration — only the administrator can authorise new spending, and post-appointment supplier debts may be subordinated. Verify any commitment with the administrator's office.",
+    },
+    receivership: {
+      headline: `${name} is in RECEIVERSHIP — refuse the engagement.`,
+      signal: "Company in receivership",
+      evidence: `${name} is under receivership. A receiver appointed by a secured creditor controls the company's assets; trading typically stops or is heavily restricted.`,
+      rationale:
+        "DECLINE — company in receivership. The receiver is realising assets for a secured creditor; new unsecured supplier debt has minimal recovery prospects.",
+    },
+    "voluntary-arrangement": {
+      headline: `${name} is in a Company Voluntary Arrangement — high-risk engagement.`,
+      signal: "CVA in force",
+      evidence: `${name} is operating under a Company Voluntary Arrangement (CVA). Pre-CVA debts have been compromised; the company is paying historical creditors at a reduced rate.`,
+      rationale:
+        "PROCEED ONLY WITH 100% UPFRONT. CVA in force — pre-arrangement debts are being repaid at compromised rates. New post-CVA debt should rank ahead but only if the supervisor-approved cashflow allows.",
+    },
+    "insolvency-proceedings": {
+      headline: `${name} is under insolvency proceedings — refuse the engagement.`,
+      signal: "Insolvency proceedings active",
+      evidence: `${name} is currently the subject of insolvency proceedings. The company's solvency and ability to pay new invoices cannot be relied upon.`,
+      rationale:
+        "DECLINE — insolvency proceedings active. Until the proceedings resolve and a clear corporate state is restored, the company cannot be relied upon to pay new invoices.",
+    },
+  } as const;
+
+  // Type-assertion: we filtered for non-trading statuses above, so
+  // `status` is guaranteed to be a key of `copy` here.
+  const c = copy[status as keyof typeof copy];
+
+  return {
+    score: 100,
+    tier: "critical",
+    predicted_days_to_pay: 180, // upper bound — payment unlikely at all
+    reasoning: [
+      {
+        signal: c.signal,
+        weight: 10,
+        evidence: c.evidence,
+      },
+      {
+        signal: "Risk Matrix v1.1 — non-trading override",
+        weight: 9,
+        evidence:
+          "The matrix's score-to-action mapping assumes a trading counter-party. When Companies House marks the entity as no longer trading, PayShield short-circuits to a Critical-tier 'decline or 100% upfront' outcome regardless of any other signal.",
+      },
+    ],
+    headline: c.headline.length > 140 ? c.headline.slice(0, 137) + "..." : c.headline,
+    action: {
+      deposit_pct: 100,
+      terms_days: 7,
+      chase_from_day: 1,
+      escalation_at_day: 1,
+      rationale: c.rationale.length > 280 ? c.rationale.slice(0, 277) + "..." : c.rationale,
+    },
+  };
+}
+
 /* Sector benchmarks from §6.2 of the spec. */
 function sectorBenchmark(sicCodes: string[]): number {
   const first = sicCodes[0] ?? "";
@@ -76,6 +193,12 @@ export function actionForTier(
 }
 
 export function fallbackScore(input: ScoreInput): ScoreCard {
+  // Hard rule: if Companies House says the entity has stopped trading,
+  // skip the points calculation entirely and return the
+  // "decline / 100% upfront" critical card.
+  const statusOverride = criticalStatusOverride(input);
+  if (statusOverride) return statusOverride;
+
   let score = 30; // medium baseline
   const reasons: ScoreCard["reasoning"] = [];
 
