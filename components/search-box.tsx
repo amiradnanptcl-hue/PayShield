@@ -221,7 +221,7 @@ export function SearchBox({
               }}
               onMouseEnter={() => setHighlight(i)}
               className={cn(
-                "grid cursor-pointer grid-cols-[auto_1fr_auto] items-center gap-4 border-b border-line/20 px-5 py-3 last:border-b-0 transition",
+                "grid cursor-pointer grid-cols-[auto_1fr] items-center gap-4 border-b border-line/20 px-5 py-3 last:border-b-0 transition",
                 i === highlight && "bg-wash-2",
               )}
             >
@@ -239,12 +239,6 @@ export function SearchBox({
                 <div className="truncate font-mono text-xs uppercase tracking-wider text-ink-3">
                   {s.number} · {s.sector}
                 </div>
-              </div>
-              <div className="flex items-center gap-2 font-mono text-sm tabular-nums text-ink">
-                <span className="text-ink-3">score</span>
-                <span className="font-display text-2xl font-bold leading-none">
-                  {s.score}
-                </span>
               </div>
             </li>
           ))}

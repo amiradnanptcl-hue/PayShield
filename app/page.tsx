@@ -4,7 +4,6 @@ import { ArrowRight, ArrowUpRight, FileText, Lock } from "lucide-react";
 import { SearchBox } from "@/components/search-box";
 import { SolanaPayCard } from "@/components/solana-pay-card";
 import { DEMO_COMPANIES } from "@/lib/demo/companies";
-import { PPR_COMPANIES } from "@/lib/data/ppr";
 
 /** Live Stripe Payment Link — £1 first month, then £19/month for 12 months. */
 const STRIPE_URL = "https://buy.stripe.com/cNi14n87u4Xsc4m0X4ejK00";
@@ -98,8 +97,7 @@ export default async function Home({
               />
               Check a customer
               <span className="font-medium text-ink-3">
-                · Companies House + UK PPR register ·{" "}
-                {PPR_COMPANIES.length.toLocaleString("en-GB")} buyers
+                · Companies House + UK PPR register
               </span>
             </h2>
             <SearchBox />
