@@ -1,0 +1,259 @@
+@import "tailwindcss";
+
+/* PayShield — brutalist editorial.
+   Tokens follow §12 of CLAUDE.md verbatim. Light only. en-GB. */
+
+:root {
+  --ink: #0a0a0a;
+  --ink-2: #2a2a2a;
+  --ink-3: #555555;
+  --paper: #ffffff;
+  --wash: #faf8f3;
+  --wash-2: #f1ede1;
+  --line: #0a0a0a;
+
+  --risk: #e8593c; /* hero accent, critical scores */
+  --warn: #f2a623; /* high scores */
+  --good: #1d9e75; /* low scores, success states */
+  --info: #378add; /* neutral data */
+
+  --shadow-brut: 6px 6px 0 var(--ink);
+  --shadow-brut-sm: 3px 3px 0 var(--ink);
+  --shadow-brut-lg: 10px 10px 0 var(--ink);
+}
+
+@theme inline {
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-paper: var(--paper);
+  --color-wash: var(--wash);
+  --color-wash-2: var(--wash-2);
+  --color-line: var(--line);
+  --color-risk: var(--risk);
+  --color-warn: var(--warn);
+  --color-good: var(--good);
+  --color-info: var(--info);
+
+  --font-display: var(--font-fraunces), ui-serif, Georgia, serif;
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", monospace;
+}
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    border-color: var(--line);
+  }
+
+  html,
+  body {
+    background: var(--wash);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    font-feature-settings: "ss01", "cv11";
+  }
+
+  ::selection {
+    background: var(--ink);
+    color: var(--wash);
+  }
+
+  /* Subtle paper grain. Pure CSS. No images. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image: radial-gradient(
+      circle at 1px 1px,
+      rgba(10, 10, 10, 0.05) 1px,
+      transparent 0
+    );
+    background-size: 4px 4px;
+    opacity: 0.4;
+    mix-blend-mode: multiply;
+  }
+
+  /* Atmospheric radial wash on the landing hero. */
+  .atmo {
+    background-image: radial-gradient(
+        800px 380px at 18% 8%,
+        rgba(232, 89, 60, 0.08),
+        transparent 60%
+      ),
+      radial-gradient(
+        620px 300px at 92% 95%,
+        rgba(55, 138, 221, 0.07),
+        transparent 65%
+      );
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display);
+    font-feature-settings: "ss01", "ss02", "ss03";
+    letter-spacing: -0.02em;
+  }
+  .font-mono {
+    font-family: var(--font-mono);
+  }
+
+  .num-tab {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Brutalist helpers — structural only.
+     Pair with a bg-* utility so Tailwind colour utilities can override. */
+  .brut-card {
+    border: 2px solid var(--line);
+    box-shadow: var(--shadow-brut);
+  }
+  .brut-card-sm {
+    border: 2px solid var(--line);
+    box-shadow: var(--shadow-brut-sm);
+  }
+  .brut-ink {
+    border: 2px solid var(--ink);
+    box-shadow: var(--shadow-brut);
+  }
+  .brut-line {
+    border: 2px solid var(--line);
+  }
+}
+
+/* ---------- Animations ---------- */
+
+@keyframes risk-fill {
+  from {
+    width: 0;
+  }
+}
+
+@keyframes type-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes ticker {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes sweep {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes counter-roll {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes score-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.92) translateY(8px);
+  }
+  60% {
+    transform: scale(1.02) translateY(-2px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes stage-step {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.anim-risk-fill {
+  animation: risk-fill 1.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.anim-type-in {
+  animation: type-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.anim-pulse-dot {
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+.anim-ticker {
+  animation: ticker 40s linear infinite;
+}
+.anim-counter {
+  animation: counter-roll 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.anim-score-pop {
+  animation: score-pop 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.anim-stage {
+  animation: stage-step 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(10, 10, 10, 0.04) 0%,
+    rgba(10, 10, 10, 0.08) 40%,
+    rgba(10, 10, 10, 0.04) 80%
+  );
+  background-size: 200% 100%;
+  animation: sweep 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
